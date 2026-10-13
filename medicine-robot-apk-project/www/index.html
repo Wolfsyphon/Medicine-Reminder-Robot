@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Medicine Reminder Robot</title>
+<style>
+:root{--bg:#0b1020;--card:#151c33;--tx:#e8ecf8;--mut:#8b95b5;--eye:#3de0ff;--glow:#3de0ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;transition:background .6s}
+body.m1{--eye:#ffd23d;--glow:#ffd23d}
+body.m2{--eye:#ff2b2b;--glow:#ff2b2b;background:#2a0808}
+main{max-width:640px;margin:auto;padding:16px}
+h1{font-size:20px;text-align:center;margin:4px 0 12px}
+.screen{background:#000;border:4px solid #222;border-radius:28px;height:300px;position:relative;overflow:hidden;box-shadow:0 0 40px -10px var(--glow)}
+.face{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;transition:transform .5s cubic-bezier(.3,1.5,.5,1)}
+.eyes{display:flex;gap:46px}
+.eye{width:92px;height:118px;border-radius:46px;background:var(--eye);box-shadow:0 0 30px var(--glow);position:relative;overflow:hidden;animation:blink 4.5s infinite;transition:height .3s,width .3s,background .4s}
+.lid{position:absolute;top:-60px;width:150px;height:90px;background:#000;transition:transform .4s}
+.eye.l .lid{left:-30px;transform:rotate(0)}.eye.r .lid{right:-30px;transform:rotate(0)}
+.m1 .eye{width:104px;height:134px}
+.m1 .eye.l .lid{transform:rotate(-14deg) translateY(-26px)}.m1 .eye.r .lid{transform:rotate(14deg) translateY(-26px)}
+.m2 .eye.l .lid{transform:rotate(26deg) translateY(10px)}.m2 .eye.r .lid{transform:rotate(-26deg) translateY(10px)}
+.m2 .eye{height:100px}
+.mouth{width:44px;height:16px;border-bottom:5px solid var(--eye);border-radius:0 0 40px 40px;transition:all .3s}
+.m1 .mouth{width:26px;height:26px;border:5px solid var(--eye);border-radius:50%}
+.m2 .mouth{width:70px;height:20px;border:none;border-top:6px solid var(--eye);border-radius:40px 40px 0 0}
+.m1 .face{animation:bob .6s infinite}.m2 .face{animation:shake .12s infinite}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.06)}}
+@keyframes bob{50%{margin-top:-14px}}
+@keyframes shake{25%{margin-left:-6px}75%{margin-left:6px}}
+.msg{text-align:center;min-height:48px;margin:12px 0;font-size:18px}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+button,input,select{font:inherit;border-radius:10px;border:1px solid #2c3764;background:#1d2646;color:var(--tx);padding:9px 12px}
+button{cursor:pointer}button.go{background:#1fae6a;border-color:#1fae6a}button.warn{background:#b8892a;border-color:#b8892a}button.del{padding:4px 9px}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-top:14px}
+.card h2{font-size:15px;margin:0 0 10px;color:var(--mut)}
+.add input{flex:1;min-width:110px}
+.med{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #243059}
+small{color:var(--mut)}
+</style></head><body>
+<main>
+<h1>🤖 Medicine Reminder Robot</h1>
+<div class="screen"><div class="face" id="face"><div class="eyes" id="eyes"><div class="eye l"><div class="lid"></div></div><div class="eye r"><div class="lid"></div></div></div><div class="mouth"></div></div></div>
+<div class="msg" id="msg">Main yahan hoon 😊</div>
+<div class="row" id="act" style="display:none"><button class="go" id="taken">✔ Dawai le li</button><button class="warn" id="snooze">⏰ 5 min baad</button></div>
+
+<div class="card add"><h2>Dawai add karein</h2>
+<div class="row"><input id="n" placeholder="Dawai ka naam"><input id="t" type="time"><select id="s"><option value="1">Slot 1</option><option value="2">Slot 2</option><option value="3">Slot 3</option><option value="4">Slot 4</option></select><button class="go" id="add">Add</button></div></div>
+
+<div class="card"><h2>Schedule</h2><div id="list"></div></div>
+
+<div class="card"><h2>Settings &amp; ESP32</h2>
+<div class="row" style="margin-bottom:10px"><button id="perm">🔔 Sound + Notifications ON karein</button><button id="tsnd">🔊 Test sound</button><button id="demo">▶ Demo alarm</button></div>
+<div class="row" style="margin-bottom:10px">Gussa kitni der baad (sec): <input id="esc" type="number" value="60" min="10" style="width:80px"></div>
+<div class="row" style="margin-bottom:10px"><button id="ser">🔌 ESP32 USB (Serial) connect</button><button id="tst">Test dispense slot 1</button></div>
+<div class="row"><input id="ip" placeholder="ESP32 WiFi IP e.g. 192.168.1.50" style="flex:1"></div>
+<small id="st">ESP32: not connected. USB ke liye Chrome/Edge chahiye. WiFi (http) sirf tab chalega jab ye file apne computer par download karke kholein.</small></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let meds=[],done={},snz=[],active=null,port=null,writer=null,ac=null,beepT=null;
+try{meds=JSON.parse(localStorage.getItem('meds')||'[]');$('ip').value=localStorage.getItem('ip')||''}catch(e){}
+const save=()=>{syncNative();try{localStorage.setItem('meds',JSON.stringify(meds));localStorage.setItem('ip',$('ip').value)}catch(e){}};
+const today=()=>new Date().toDateString();
+function render(){$('list').innerHTML=meds.length?meds.slice().sort((a,b)=>a.t.localeCompare(b.t)).map(m=>`<div class="med"><span><b>${m.t}</b> — ${m.n} <small>(Slot ${m.s})</small></span><button class="del" onclick="rm(${m.id})">✕</button></div>`).join(''):'<small>Abhi koi dawai nahi.</small>'}
+window.rm=id=>{meds=meds.filter(m=>m.id!=id);save();render()};
+$('add').onclick=()=>{const n=$('n').value.trim(),t=$('t').value;if(!n||!t)return;meds.push({id:Date.now(),n,t,s:+$('s').value});$('n').value='';save();render()};
+$('ip').onchange=save;
+
+// eyes: look around
+const eyes=$('eyes');
+function look(){const lvl=active?active.level:0;const r=lvl==1?40:lvl==2?10:28;
+ eyes.style.transition=`transform ${lvl==1?.25:.5}s`;
+ eyes.style.transform=`translate(${(Math.random()*2-1)*r*1.4}px,${(Math.random()*2-1)*r*.5}px)`;
+ setTimeout(look,lvl==1?700:lvl==2?2500:1800+Math.random()*2500)}
+look();
+function mode(m){document.body.className=m?'m'+m:''}
+
+// sound
+let VOL=1;
+function beep(f,d,v=.3){if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(v*VOL,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}
+function unlock(){ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume()}
+document.addEventListener('pointerdown',unlock);
+function startSound(l){clearInterval(beepT);let k=0;
+ const f=l==1?()=>{[0,1,2].forEach(i=>setTimeout(()=>beep(i%2?1175:880,.22),i*260));try{navigator.vibrate([300,100,300])}catch(e){}}:()=>{beep(k++%2?1500:800,.24,.5);try{navigator.vibrate(200)}catch(e){}};
+ f();beepT=setInterval(f,l==1?1600:260)}
+function say(t){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)}catch(e){}}
+function notify(t){try{if(Notification.permission=='granted')new Notification('💊 Medicine Reminder Robot',{body:t,requireInteraction:true})}catch(e){}}
+$('perm').onclick=async()=>{unlock();beep(660,.2);try{await Notification.requestPermission()}catch(e){}$('perm').textContent='✅ Sound + Notifications ON'};
+
+// ESP32
+async function send(line){
+ if(writer){try{await writer.write(new TextEncoder().encode(line+'\n'))}catch(e){}}
+ const ip=$('ip').value.trim();
+ if(ip){const m=line.match(/DISPENSE:(\d+)/);if(m)fetch(`http://${ip}/dispense?slot=${m[1]}`,{mode:'no-cors'}).catch(()=>{})}}
+$('ser').onclick=async()=>{try{port=await navigator.serial.requestPort();await port.open({baudRate:115200});writer=port.writable.getWriter();$('st').textContent='ESP32 USB connected ✅'}catch(e){$('st').textContent='Serial connect nahi hua (Chrome/Edge use karein).'}};
+$('tst').onclick=()=>{send('DISPENSE:1');$('st').textContent='Command bheji: DISPENSE:1'};
+
+// alarm flow
+function start(m){active={m,level:1,since:Date.now()};mode(1);$('act').style.display='flex';
+ const t=`Beta, ${m.n} khane ka time ho gaya hai! Jaldi lo 🥺`;$('msg').textContent=t;startSound(1);say(`Beta, ${m.n} khane ka time ho gaya`);notify(`${m.n} lene ka waqt ho gaya!`);send('DISPENSE:'+m.s)}
+function escalate(){active.level=2;mode(2);$('msg').textContent=`Maine kaha tha ${active.m.n} lo! Ab gussa aa raha hai 😡`;startSound(2);say(`Ab bas! ${active.m.n} abhi lo!`);notify('Dawai abhi lo! Robot gussa hai 😡');send('ANGRY')}
+function stop(){clearInterval(beepT);try{speechSynthesis.cancel()}catch(e){}mode(0);$('act').style.display='none';active=null}
+$('taken').onclick=()=>{const m=active.m;done[today()+m.id]=1;stop();$('msg').textContent='Shabash! 🎉 Aap bahut acche hain.';send('TAKEN');setTimeout(()=>{if(!active)$('msg').textContent='Main yahan hoon 😊'},5000)};
+$('snooze').onclick=()=>{snz.push({m:active.m,at:Date.now()+300000});stop();$('msg').textContent='Theek hai, 5 minute baad phir aaunga 😤'};
+$('tsnd').onclick=()=>{unlock();startSound(1);setTimeout(()=>{clearInterval(beepT)},3200)};
+$('demo').onclick=()=>{if(!ac)$('perm').click();if(!active)start({id:0,n:'Demo Medicine',t:'--',s:1})};
+
+setInterval(()=>{
+ if(active){if(active.level==1&&Date.now()-active.since>(+$('esc').value||60)*1000)escalate();return}
+ const d=new Date(),hm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+ for(const m of meds){if(m.t==hm&&!done[today()+m.id]){done[today()+m.id]=1;return start(m)}}
+ const i=snz.findIndex(s=>s.at<=Date.now());if(i>-1){const s=snz.splice(i,1)[0];start(s.m)}
+},1000);
+async function syncNative(){const LN=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.LocalNotifications;if(!LN)return;try{await LN.requestPermissions();await LN.createChannel({id:'meds',name:'Medicine alarms',importance:5,vibration:true,visibility:1});const p=await LN.getPending();if(p.notifications.length)await LN.cancel({notifications:p.notifications});if(meds.length)await LN.schedule({notifications:meds.map(m=>{const[h,mi]=m.t.split(':').map(Number);return{id:m.id%2000000000,title:'💊 Dawai ka time!',body:'Beta, '+m.n+' lo! (Slot '+m.s+')',channelId:'meds',schedule:{on:{hour:h,minute:mi},allowWhileIdle:true}}})})}catch(e){}}
+syncNative();render();
+</script></body></html>
